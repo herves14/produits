@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* test visuel immédiat */
+body {
+  background-color: black;
+}
