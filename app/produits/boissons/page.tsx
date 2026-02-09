@@ -26,7 +26,7 @@ export default async function PagnesPage() {
             <ProductCard
               key={product.id}
               name={product.name}
-              image={product.image}
+              image={product.image ?? undefined}
               price={product.price}
             />
           ))}
