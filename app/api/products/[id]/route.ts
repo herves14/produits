@@ -6,9 +6,10 @@ import path from "path";
 // PUT - Modifier un produit avec upload optionnel
 export async function PUT(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params; // ← IMPORTANT: await params
     const formData = await req.formData();
 
     const name = formData.get("name") as string;
@@ -25,7 +26,7 @@ export async function PUT(
 
     // Récupérer le produit actuel
     const currentProduct = await prisma.product.findUnique({
-      where: { id: params.id },
+      where: { id },
     });
 
     if (!currentProduct) {
@@ -65,7 +66,7 @@ export async function PUT(
 
     // Mettre à jour le produit
     const product = await prisma.product.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         name,
         description: description || null,
@@ -90,11 +91,13 @@ export async function PUT(
 // DELETE - Supprimer un produit
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params; // ← IMPORTANT: await params
+    
     const product = await prisma.product.findUnique({
-      where: { id: params.id },
+      where: { id },
     });
 
     if (!product) {
@@ -113,7 +116,7 @@ export async function DELETE(
     }
 
     await prisma.product.delete({
-      where: { id: params.id },
+      where: { id },
     });
 
     return NextResponse.json({ success: true });
