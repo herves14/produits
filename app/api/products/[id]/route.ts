@@ -1,17 +1,15 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import fs from "fs";
-import path from "path";
+import cloudinary from "@/lib/cloudinary";
 
-// PUT - Modifier un produit avec upload optionnel
+// PUT - Modifier un produit avec upload optionnel sur Cloudinary
 export async function PUT(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params; // ← IMPORTANT: await params
+    const { id } = await params;
     const formData = await req.formData();
-
     const name = formData.get("name") as string;
     const description = formData.get("description") as string;
     const price = Number(formData.get("price"));
@@ -40,28 +38,31 @@ export async function PUT(
 
     // Si une nouvelle image est uploadée
     if (newImage) {
-      // Supprimer l'ancienne image si elle existe
-      if (currentProduct.image && currentProduct.image.startsWith("/uploads/")) {
-        const oldImagePath = path.join(process.cwd(), "public", currentProduct.image);
-        if (fs.existsSync(oldImagePath)) {
-          fs.unlinkSync(oldImagePath);
+      try {
+        // Supprimer l'ancienne image de Cloudinary si elle existe
+        if (currentProduct.image && currentProduct.image.includes("cloudinary.com")) {
+          const publicId = currentProduct.image.split("/").slice(-2).join("/").split(".")[0];
+          await cloudinary.uploader.destroy(publicId);
         }
+
+        // Upload la nouvelle image sur Cloudinary
+        const bytes = await newImage.arrayBuffer();
+        const buffer = Buffer.from(bytes);
+        const base64Image = `data:${newImage.type};base64,${buffer.toString("base64")}`;
+
+        const uploadResult = await cloudinary.uploader.upload(base64Image, {
+          folder: "products",
+          resource_type: "auto",
+        });
+
+        imagePath = uploadResult.secure_url;
+      } catch (uploadError) {
+        console.error("❌ Erreur upload Cloudinary:", uploadError);
+        return NextResponse.json(
+          { error: "Erreur lors de l'upload de l'image" },
+          { status: 500 }
+        );
       }
-
-      // Sauvegarder la nouvelle image
-      const bytes = await newImage.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-
-      const uploadDir = path.join(process.cwd(), "public/uploads");
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
-      }
-
-      const fileName = `produit-${Date.now()}-${newImage.name}`;
-      const filePath = path.join(uploadDir, fileName);
-
-      fs.writeFileSync(filePath, buffer);
-      imagePath = `/uploads/${fileName}`;
     }
 
     // Mettre à jour le produit
@@ -88,14 +89,13 @@ export async function PUT(
   }
 }
 
-// DELETE - Supprimer un produit
+// DELETE - Supprimer un produit et son image sur Cloudinary
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params; // ← IMPORTANT: await params
-    
+    const { id } = await params;
     const product = await prisma.product.findUnique({
       where: { id },
     });
@@ -107,11 +107,13 @@ export async function DELETE(
       );
     }
 
-    // Supprimer l'image si elle existe
-    if (product.image && product.image.startsWith("/uploads/")) {
-      const imagePath = path.join(process.cwd(), "public", product.image);
-      if (fs.existsSync(imagePath)) {
-        fs.unlinkSync(imagePath);
+    // Supprimer l'image de Cloudinary si elle existe
+    if (product.image && product.image.includes("cloudinary.com")) {
+      try {
+        const publicId = product.image.split("/").slice(-2).join("/").split(".")[0];
+        await cloudinary.uploader.destroy(publicId);
+      } catch (error) {
+        console.error("❌ Erreur suppression image Cloudinary:", error);
       }
     }
 

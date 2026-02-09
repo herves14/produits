@@ -1,7 +1,6 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import fs from "fs";
-import path from "path";
+import cloudinary from "@/lib/cloudinary";
 
 // GET - Liste tous les produits
 export async function GET() {
@@ -18,7 +17,6 @@ export async function GET() {
         createdAt: "desc",
       },
     });
-
     return NextResponse.json(products);
   } catch (error) {
     return NextResponse.json(
@@ -28,15 +26,16 @@ export async function GET() {
   }
 }
 
-// POST - Créer un produit avec upload d'image (FormData)
+// POST - Créer un produit avec upload d'image sur Cloudinary
 export async function POST(req: Request) {
   try {
     const formData = await req.formData();
-
     const name = formData.get("name") as string;
     const price = Number(formData.get("price"));
     const categoryId = formData.get("categoryId") as string;
     const image = formData.get("image") as File | null;
+
+    console.log("📥 Données reçues:", { name, price, categoryId, hasImage: !!image });
 
     if (!name || !price || !categoryId) {
       return NextResponse.json({ error: "Champs manquants" }, { status: 400 });
@@ -44,22 +43,32 @@ export async function POST(req: Request) {
 
     let imagePath: string | null = null;
 
+    // Upload sur Cloudinary si une image est fournie
     if (image) {
-      const bytes = await image.arrayBuffer();
-      const buffer = Buffer.from(bytes);
+      try {
+        const bytes = await image.arrayBuffer();
+        const buffer = Buffer.from(bytes);
+        const base64Image = `data:${image.type};base64,${buffer.toString("base64")}`;
 
-      const uploadDir = path.join(process.cwd(), "public/uploads");
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
+        console.log("📤 Upload vers Cloudinary...");
+        
+        const uploadResult = await cloudinary.uploader.upload(base64Image, {
+          folder: "products",
+          resource_type: "auto",
+        });
+
+        imagePath = uploadResult.secure_url;
+        console.log("✅ Image uploadée:", imagePath);
+      } catch (uploadError) {
+        console.error("❌ Erreur upload Cloudinary:", uploadError);
+        return NextResponse.json(
+          { error: "Erreur lors de l'upload de l'image" },
+          { status: 500 }
+        );
       }
-
-      const fileName = `produit-${Date.now()}-${image.name}`;
-      const filePath = path.join(uploadDir, fileName);
-
-      fs.writeFileSync(filePath, buffer);
-      imagePath = `/uploads/${fileName}`;
     }
 
+    // Créer le produit dans la base de données
     const product = await prisma.product.create({
       data: {
         name,
@@ -69,9 +78,11 @@ export async function POST(req: Request) {
       },
     });
 
+    console.log("✅ Produit créé:", product);
+
     return NextResponse.json(product, { status: 201 });
   } catch (error) {
-    console.error("❌ UPLOAD ERROR", error);
+    console.error("❌ ERREUR CRÉATION PRODUIT:", error);
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
   }
 }
@@ -80,7 +91,6 @@ export async function POST(req: Request) {
 export async function PUT(request: Request) {
   try {
     const body = await request.json();
-
     const product = await prisma.product.update({
       where: { id: body.id },
       data: {
@@ -93,7 +103,6 @@ export async function PUT(request: Request) {
         featured: body.featured,
       },
     });
-
     return NextResponse.json(product);
   } catch (error) {
     return NextResponse.json(
